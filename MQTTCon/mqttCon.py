@@ -1,53 +1,52 @@
 import paho.mqtt.client as mqtt
 from inputs import get_gamepad
+import time
 
-broker = "mqtt.eclipseprojects.io"
+broker = "localhost"
 topic = "controller/input"
 
 client = mqtt.Client()
 client.connect(broker, 1883, 60)
 
-channel_ranges = {
-    0: (100, 380),  # Gripper
-    1: (100, 500),  # Gripper Arm
-    2: (100, 470),  # Upper Arm
-    3: (100, 520),  # Middle Arm
-    4: (220, 480)  # Lower Arm
-}
+last_values = {0: 0, 1: 0, 2: 0, 3: 0, 6: 0} 
 
-def scale_value(value, min_value, max_value):
-    return int(min_value + (max_value - min_value) * ((value + 32768) / 65536))  # Annahme: Wertebereich des Controllers [-32768, 32767]
+scale_factor = 0.1 
+
+def calculate_delta(current, last):
+    return int((current - last) * scale_factor)
 
 print("Drücke einen Knopf..")
 
 while True:
     events = get_gamepad()
     for event in events:
-        if event.ev_type == "Absolute":  # Achsenbewegung
+        if event.ev_type == "Absolute":  
             channel = None
-            pulse = None
+            delta = None
             
-            if event.code == "ABS_X":  # Beispiel: Steuerung für Gripper
+            if event.code == "ABS_X":
                 channel = 0
-                pulse = scale_value(event.state, *channel_ranges[channel])
-            elif event.code == "ABS_Y":  # Beispiel: Steuerung für Gripper Arm
+            elif event.code == "ABS_Y":
                 channel = 1
-                pulse = scale_value(event.state, *channel_ranges[channel])
-            elif event.code == "ABS_RX":  # Beispiel: Steuerung für Upper Arm
+            elif event.code == "ABS_RX":
                 channel = 2
-                pulse = scale_value(event.state, *channel_ranges[channel])
-            elif event.code == "ABS_RY":  # Beispiel: Steuerung für Middle Arm
+            elif event.code == "ABS_RY":
                 channel = 3
-                pulse = scale_value(event.state, *channel_ranges[channel])
+            elif event.code == "ABS_Z": # passts grundsätzlich so?
+                channel = 6
+            
+            if channel is not None:
+                delta = calculate_delta(event.state, last_values[channel])
+                last_values[channel] = event.state  
 
-            if channel is not None and pulse is not None:
-                message = f"{channel}:0:{pulse}"  # "0" = absolute Bewegung
+                message = f"{channel}:1:{delta}" 
                 client.publish(topic, message)
                 print(f"Nachricht gesendet: {message}")
 
-        elif event.ev_type == "Key" and event.state == 1:  # Taste gedrückt
-            if event.code == "BTN_SOUTH":  # Beispiel für Move-Typ 2 (Reset)
-                message = "2"  # Alle Motoren zurücksetzen
+        elif event.ev_type == "Key" and event.state == 1:
+            if event.code == "BTN_SOUTH":
+                message = "2"
                 client.publish(topic, message)
                 print(f"Nachricht gesendet: {message}")
 
+    time.sleep(0.1)
